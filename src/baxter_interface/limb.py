@@ -69,6 +69,7 @@ class Limb(object):
         self._joint_velocity = dict()
         self._joint_effort = dict()
         self._commanded_effort = dict()
+        self._commanded_force = dict()
         self._cartesian_pose = dict()
         self._cartesian_velocity = dict()
         self._cartesian_effort = dict()
@@ -106,6 +107,13 @@ class Limb(object):
             ns + 'endpoint_state',
             EndpointState,
             self._on_endpoint_states,
+            queue_size=1,
+            tcp_nodelay=True)
+
+        _cartesian_commanded_sub = rospy.Subscriber(
+            ns + 'commanded_endpoint_state',
+            EndpointState,
+            self._on_endpoint_commanded,
             queue_size=1,
             tcp_nodelay=True)
 
@@ -188,6 +196,22 @@ class Limb(object):
             ),
         }
 
+    def _on_endpoint_commanded(self, msg):
+        # _wrench = {'force': (x, y, z), 'torque': (x, y, z)}
+        self._commanded_force = {
+            'force': self.Point(
+                msg.wrench.force.x,
+                msg.wrench.force.y,
+                msg.wrench.force.z,
+            ),
+            'torque': self.Point(
+                msg.wrench.torque.x,
+                msg.wrench.torque.y,
+                msg.wrench.torque.z,
+            ),
+        }
+
+
     def joint_names(self):
         """
         Return the names of the joints for the specified limb.
@@ -260,7 +284,7 @@ class Limb(object):
 
     def commanded_efforts(self):
         """
-        Return all joint efforts.
+        Return all commanded joint efforts.
 
         @rtype: dict({str:float})
         @return: unordered dict of joint name Keys to effort (Nm) Values
@@ -314,6 +338,35 @@ class Limb(object):
                       L{Limb.Point}
         """
         return deepcopy(self._cartesian_effort)
+
+    def endpoint_commanded(self):
+        """
+        Return commanded Cartesian endpoint wrench {force, torque}.
+
+        @rtype: dict({str:L{Limb.Point},str:L{Limb.Point}})
+        @return: force and torque at endpoint as named tuples in a dict
+
+        C{wrench = {'force': (x, y, z), 'torque': (x, y, z)}}
+
+          - 'force': Cartesian force on x,y,z axes in
+                     namedtuple L{Limb.Point}
+          - 'torque': Torque around x,y,z axes in named tuple
+                      L{Limb.Point}
+        """
+        commanded = {
+            'force': self.Point(
+                self._cartesian_effort['force'].x - self._commanded_force['force'].x,
+                self._cartesian_effort['force'].y - self._commanded_force['force'].y,
+                self._cartesian_effort['force'].z - self._commanded_force['force'].z,
+            ),
+            'torque': self.Point(
+                self._cartesian_effort['torque'].x - self._commanded_force['torque'].x,
+                self._cartesian_effort['torque'].x - self._commanded_force['torque'].y,
+                self._cartesian_effort['torque'].x - self._commanded_force['torque'].z,
+            ),
+        }
+
+        return commanded
 
     def set_command_timeout(self, timeout):
         """
