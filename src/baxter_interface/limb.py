@@ -43,6 +43,7 @@ import baxter_dataflow
 from baxter_core_msgs.msg import (
     JointCommand,
     EndpointState,
+    SEAJointState,
 )
 from baxter_interface import settings
 
@@ -67,6 +68,7 @@ class Limb(object):
         self._joint_angle = dict()
         self._joint_velocity = dict()
         self._joint_effort = dict()
+        self._commanded_effort = dict()
         self._cartesian_pose = dict()
         self._cartesian_velocity = dict()
         self._cartesian_effort = dict()
@@ -115,6 +117,14 @@ class Limb(object):
             queue_size=1,
             tcp_nodelay=True)
 
+        gravity_comp_topic = ns + 'gravity_compensation_torques'
+        _gravity_comp_sub = rospy.Subscriber(
+            gravity_comp_topic,
+            SEAJointState,
+            self._on_gravity_comp,
+            queue_size=1,
+            tcp_nodelay=True)
+
         err_msg = ("%s limb init failed to get current joint_states "
                    "from %s") % (self.name.capitalize(), joint_state_topic)
         baxter_dataflow.wait_for(lambda: len(self._joint_angle.keys()) > 0,
@@ -130,6 +140,10 @@ class Limb(object):
                 self._joint_angle[name] = msg.position[idx]
                 self._joint_velocity[name] = msg.velocity[idx]
                 self._joint_effort[name] = msg.effort[idx]
+
+    def _on_gravity_comp(self, msg):
+        for idx, name in enumerate(msg.name):
+            self._commanded_effort[name] = msg.commanded_effort[idx]
 
     def _on_endpoint_states(self, msg):
         # Comments in this private method are for documentation purposes.
@@ -243,6 +257,15 @@ class Limb(object):
         @return: unordered dict of joint name Keys to effort (Nm) Values
         """
         return deepcopy(self._joint_effort)
+
+    def commanded_efforts(self):
+        """
+        Return all joint efforts.
+
+        @rtype: dict({str:float})
+        @return: unordered dict of joint name Keys to effort (Nm) Values
+        """
+        return deepcopy(self._commanded_effort)
 
     def endpoint_pose(self):
         """
